@@ -39,17 +39,11 @@ PIPE_SPEC_DATABASE = DATA / "PipeSpec_Master.xlsx"
 # -------------------------------------------------------
 
 PIPE_DIMENSIONS_DB = DATABASES / "PipeDimensions.xlsx"
-
 VALVES_DB = DATABASES / "Valves.xlsx"
-
 FLANGES_DB = DATABASES / "Flanges.xlsx"
-
 FITTINGS_DB = DATABASES / "Fittings.xlsx"
-
 SUPPORTS_DB = DATABASES / "Supports.xlsx"
-
 MATERIALS_DB = DATABASES / "Materials.xlsx"
-
 PRESSURE_DB = DATABASES / "PressureRatings.xlsx"
 
 # -------------------------------------------------------
@@ -69,10 +63,9 @@ REPORT_OUTPUT = OUTPUT
 # -------------------------------------------------------
 
 APP_NAME = "PipingIQ Professional"
-
 VERSION = "6.0"
-
 AUTHOR = "Todd Theis"
+PAGE_TITLE = "PipingIQ Professional"
 
 # -------------------------------------------------------
 # Display
@@ -81,5 +74,13 @@ AUTHOR = "Todd Theis"
 WINDOW_TITLE = f"{APP_NAME} {VERSION}"
 
 LOGO = ASSETS / "PipingIQ_Logo.png"
-
 BACKGROUND = ASSETS / "background.jpg"
+
+BUTTON_COLOR = "#0F4C93"
+BUTTON_TEXT_COLOR = "#FFFFFF"
+CARD_BACKGROUND = "#10223E"
+LABEL_COLOR = "#A8D1FF"
+VALUE_COLOR = "#E9F4FF"
+ANSWER_COLOR = "#A2D9FF"
+TEXT_COLOR = "#EDF5FF"
+SECTION_HEADER_COLOR = "#69A5FF"

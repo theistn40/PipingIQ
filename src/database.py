@@ -15,11 +15,13 @@ from typing import Any
 
 import pandas as pd
 
+from config import PIPE_DIMENSIONS_DB
 
 REQUIRED_COLUMNS = {"Spec", "Service", "Service_Abbv", "Size"}
 DB_FILENAME = "PipeSpec_Master.xlsx"
 ROOT = Path(__file__).resolve().parent
 DEFAULT_DATABASE_PATH = ROOT.parent / "data" / DB_FILENAME
+DEFAULT_DIMENSIONS_PATH = PIPE_DIMENSIONS_DB
 
 
 # ------------------------------------------------------------------
@@ -106,6 +108,116 @@ class QueryResult:
         return self.success and len(self.specifications) > 1
 
 
+@dataclass
+class DimensionQueryResult:
+    success: bool
+    records: list[dict[str, Any]] = field(default_factory=list)
+    message: str = ""
+    item: str | None = None
+    requested_size: float | None = None
+
+
+class DimensionDatabase:
+    def __init__(self, path: Path | str | None = None, autoload: bool = True):
+        self.path = Path(path) if path is not None else DEFAULT_DIMENSIONS_PATH
+        self._df: pd.DataFrame | None = None
+
+        if autoload:
+            self.refresh()
+
+    @property
+    def loaded(self) -> bool:
+        return self._df is not None
+
+    @property
+    def dataframe(self) -> pd.DataFrame:
+        if not self.loaded:
+            raise DatabaseNotLoadedError("Dimension database has not been loaded.")
+        return self._df
+
+    def refresh(self) -> None:
+        df = self._load_database()
+        self._normalize(df)
+        self._df = df
+
+    def _load_database(self) -> pd.DataFrame:
+        if not self.path.exists():
+            raise FileNotFoundError(f"Dimension database not found: {self.path}")
+
+        df = pd.read_excel(self.path, header=2)
+        return df
+
+    def _normalize(self, df: pd.DataFrame) -> None:
+        df = df.fillna("")
+        df.columns = [str(c).strip() for c in df.columns]
+
+        # Drop blank header/data rows introduced by the sheet layout
+        if "SIZE" not in df.columns and df.columns.size > 0:
+            raise DatabaseValidationError("Dimension database is missing a SIZE column.")
+
+        df = df.loc[df["SIZE"].astype(str).str.strip() != ""].reset_index(drop=True)
+        df["SIZE"] = df["SIZE"].astype(str).str.strip()
+        self._df = df
+
+    def item_options(self) -> list[str]:
+        if not self.loaded:
+            return []
+        seen: set[str] = set()
+        columns: list[str] = []
+        for col in self._df.columns:
+            name = str(col).strip()
+            if not name or name.upper() == "SIZE":
+                continue
+            if name in seen:
+                continue
+            seen.add(name)
+            columns.append(name)
+        return columns
+
+    def query(self, item: str | None = None, size: float | None = None) -> DimensionQueryResult:
+        if not self.loaded:
+            return DimensionQueryResult(False, message="Dimension database is not loaded.")
+
+        if item is None or not str(item).strip():
+            return DimensionQueryResult(False, message="Please select a dimension item.")
+
+        if size is None:
+            return DimensionQueryResult(False, message="Please enter a size to search.")
+
+        item_name = str(item).strip()
+        if item_name not in self._df.columns:
+            return DimensionQueryResult(False, message=f"Unknown dimension item: {item_name}")
+
+        matched = []
+        for _, row in self._df.iterrows():
+            try:
+                if size_matches(row["SIZE"], size):
+                    matched.append({
+                        "Size": row["SIZE"],
+                        "Item": item_name,
+                        item_name: row[item_name],
+                        **{col: row[col] for col in self._df.columns if col not in {"SIZE", item_name}},
+                    })
+            except Exception:
+                continue
+
+        if not matched:
+            return DimensionQueryResult(
+                False,
+                message=f"No dimension results found for {item_name} at size {size}.",
+                item=item_name,
+                requested_size=size,
+            )
+
+        return DimensionQueryResult(
+            True,
+            records=matched,
+            message=f"Found {len(matched)} dimension record(s).",
+            item=item_name,
+            requested_size=size,
+        )
+
+
 # ------------------------------------------------------------------
 # Database manager
 # ------------------------------------------------------------------
@@ -145,6 +257,19 @@ class DatabaseManager:
         df = pd.read_excel(self.path)
         df.columns = [str(c).strip() for c in df.columns]
         df = df.fillna("")
+
+        # Remove accidental repeated header rows inside the sheet where cells contain the column names
+        try:
+            if "Spec" in df.columns and "Service" in df.columns and "Size" in df.columns:
+                spec_header = df["Spec"].astype(str).str.strip().str.upper() == "SPEC"
+                service_header = df["Service"].astype(str).str.strip().str.upper() == "SERVICE"
+                size_header = df["Size"].astype(str).str.strip().str.upper() == "SIZE"
+                header_rows = spec_header & service_header & size_header
+                if header_rows.any():
+                    df = df.loc[~header_rows].reset_index(drop=True)
+        except Exception:
+            # If anything unexpected happens, keep the original dataframe and let validation handle it
+            pass
         return df
 
     def _validate_database(self, df: pd.DataFrame) -> None:
@@ -274,34 +399,133 @@ class DatabaseManager:
 
 
 def _is_valid_size_rule(rule: Any) -> bool:
-    rule_text = str(rule).strip().upper()
-    if rule_text == "" or rule_text == "ALL":
+    # Accept size rules with optional trailing double-quote (e.g. <=2" or > 2")
+    rule_text = str(rule).strip()
+    if rule_text == "" or rule_text.upper() == "ALL":
         return True
 
-    pattern = re.compile(r"^(<=|>=|<|>)?\s*(\d+(\.\d+)?)$")
-    return bool(pattern.match(rule_text))
+    # Normalize by removing common quote characters before validation
+    normalized = rule_text.replace('"', '').replace('”', '').upper()
+
+    # Collapse spaced comparator tokens like '< =' into '<=' so they validate
+    normalized = re.sub(r"<\s*=", "<=", normalized)
+    normalized = re.sub(r">\s*=", ">=", normalized)
+
+    # Accept 'ALL' or blank
+    if normalized == "" or normalized == "ALL":
+        return True
+
+    # Accept simple comparator + numeric (including fractions) or range expressions like '1-2' or '1 TO 2'
+    comp_match = re.match(r"^(<=|>=|<|>)\s*(.+)$", normalized)
+    if comp_match:
+        _, rhs = comp_match.groups()
+        try:
+            _parse_numeric_size(rhs)
+            return True
+        except ValueError:
+            return False
+
+    # Range forms: 'x-y' or 'x TO y'
+    range_match = re.match(r"^(\S+)\s*[-]\s*(\S+)$", normalized) or re.match(r"^(\S+)\s+TO\s+(\S+)$", normalized)
+    if range_match:
+        a, b = range_match.groups()
+        try:
+            _parse_numeric_size(a)
+            _parse_numeric_size(b)
+            return True
+        except ValueError:
+            return False
+
+    # Otherwise expect a single numeric value (possibly a fraction)
+    try:
+        _parse_numeric_size(normalized)
+        return True
+    except ValueError:
+        return False
 
 
 def size_matches(rule: Any, requested_size: float | None) -> bool:
     if requested_size is None:
         return True
-
-    rule_text = str(rule).strip().upper()
-    if rule_text == "" or rule_text == "ALL":
+    # Remove quotes and normalize for numeric comparison
+    rule_text = str(rule).strip()
+    if rule_text == "" or rule_text.upper() == "ALL":
         return True
 
+    # Normalize
+    rule_norm = rule_text.replace('"', '').replace('”', '').strip().upper()
+    rule_norm = re.sub(r"<\s*=", "<=", rule_norm)
+    rule_norm = re.sub(r">\s*=", ">=", rule_norm)
+
+    # Blank or ALL matches anything
+    if rule_norm == "" or rule_norm == "ALL":
+        return True
+
+    # Comparator forms
+    comp_match = re.match(r"^(<=|>=|<|>)\s*(.+)$", rule_norm)
+    if comp_match:
+        comp, rhs = comp_match.groups()
+        try:
+            val = _parse_numeric_size(rhs)
+        except ValueError:
+            return False
+        if comp == "<=":
+            return requested_size <= val
+        if comp == ">=":
+            return requested_size >= val
+        if comp == "<":
+            return requested_size < val
+        if comp == ">":
+            return requested_size > val
+
+    # Range forms like 'x-y' or 'x TO y'
+    range_match = re.match(r"^(\S+)\s*[-]\s*(\S+)$", rule_norm) or re.match(r"^(\S+)\s+TO\s+(\S+)$", rule_norm)
+    if range_match:
+        a, b = range_match.groups()
+        try:
+            low = _parse_numeric_size(a)
+            high = _parse_numeric_size(b)
+        except ValueError:
+            return False
+        return low <= requested_size <= high
+
+    # Single numeric value
     try:
-        if rule_text.startswith("<="):
-            return requested_size <= float(rule_text[2:].strip())
-        if rule_text.startswith(">="):
-            return requested_size >= float(rule_text[2:].strip())
-        if rule_text.startswith("<"):
-            return requested_size < float(rule_text[1:].strip())
-        if rule_text.startswith(">"):
-            return requested_size > float(rule_text[1:].strip())
-        return requested_size == float(rule_text)
+        val = _parse_numeric_size(rule_norm)
+        return requested_size == val
     except ValueError:
         return False
+
+
+def _parse_numeric_size(text: str) -> float:
+    """Parse a numeric size token which may be a decimal or a fraction like '1 1/2' or '3/4'.
+
+    Raises ValueError if parsing fails.
+    """
+    s = str(text).strip()
+    # remove any trailing punctuation
+    s = s.strip().strip('"').strip()
+
+    # Try plain float first
+    try:
+        return float(s)
+    except Exception:
+        pass
+
+    # Match mixed number like '1 1/2' or '1-1/2' (treat dash between int and fraction as space)
+    mixed = re.match(r"^(\d+)\s*[- ]\s*(\d+)/(\d+)$", s)
+    if mixed:
+        whole, num, den = mixed.groups()
+        return float(whole) + float(num) / float(den)
+
+    # Match simple fraction like '3/4'
+    frac = re.match(r"^(\d+)/(\d+)$", s)
+    if frac:
+        num, den = frac.groups()
+        return float(num) / float(den)
+
+    # If none matched, raise
+    raise ValueError(f"Cannot parse numeric size from '{text}'")
 
 
 __all__ = [

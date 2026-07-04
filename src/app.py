@@ -25,6 +25,12 @@ from ui import (
 # APP START
 # ---------------------------------------------------------
 
+# Initialize session state for modal
+if "show_modal" not in st.session_state:
+    st.session_state["show_modal"] = False
+if "modal_results" not in st.session_state:
+    st.session_state["modal_results"] = None
+
 setup_page()
 render_header()
 
@@ -110,7 +116,6 @@ if search_clicked or ai_lookup_clicked:
                 render_results(result.get("results", [result]))
             else:
                 st.error(result["message"])
-else:
-    render_answer_panel()
 
-render_footer()
+# Always render the answer panel at the end (shows modal if results exist)
+render_answer_panel()

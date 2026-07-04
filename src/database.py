@@ -67,17 +67,25 @@ class EngineeringSpecification:
 
     @classmethod
     def from_series(cls, row: pd.Series) -> "EngineeringSpecification":
+        # Cast row.name to int; handle cases where it might not be convertible
+        row_idx: int | None = None
+        if row.name is not None:
+            try:
+                row_idx = int(row.name)  # type: ignore
+            except (ValueError, TypeError):
+                row_idx = None
+        
         return cls(
             spec=str(row["Spec"]).strip(),
             service=str(row["Service"]).strip(),
             service_abbv=str(row["Service_Abbv"]).strip().upper(),
             size_rule=str(row["Size"]).strip(),
             fields={
-                key: value
+                str(key): value
                 for key, value in row.items()
                 if key not in {"Spec", "Service", "Service_Abbv", "Size"}
             },
-            row_index=int(row.name) if row.name is not None else None,
+            row_index=row_idx,
         )
 
     def as_dict(self) -> dict[str, Any]:
@@ -133,7 +141,7 @@ class DimensionDatabase:
     def dataframe(self) -> pd.DataFrame:
         if not self.loaded:
             raise DatabaseNotLoadedError("Dimension database has not been loaded.")
-        return self._df
+        return self._df  # type: ignore
 
     def refresh(self) -> None:
         df = self._load_database()
@@ -160,7 +168,7 @@ class DimensionDatabase:
         self._df = df
 
     def item_options(self) -> list[str]:
-        if not self.loaded:
+        if not self.loaded or self._df is None:
             return []
         seen: set[str] = set()
         columns: list[str] = []
@@ -175,7 +183,7 @@ class DimensionDatabase:
         return columns
 
     def query(self, item: str | None = None, size: float | None = None) -> DimensionQueryResult:
-        if not self.loaded:
+        if not self.loaded or self._df is None:
             return DimensionQueryResult(False, message="Dimension database is not loaded.")
 
         if item is None or not str(item).strip():
@@ -241,7 +249,7 @@ class DatabaseManager:
     def dataframe(self) -> pd.DataFrame:
         if not self.loaded:
             raise DatabaseNotLoadedError("Database has not been loaded.")
-        return self._df
+        return self._df  # type: ignore
 
     def refresh(self) -> None:
         df = self._load_database()
@@ -277,11 +285,15 @@ class DatabaseManager:
         if missing:
             raise DatabaseValidationError(f"Missing required columns: {missing}")
 
-        invalid_rules = [
-            (int(index), rule)
-            for index, rule in df["Size"].items()
-            if not _is_valid_size_rule(rule)
-        ]
+        invalid_rules = []
+        for index, rule in df["Size"].items():
+            if not _is_valid_size_rule(rule):
+                try:
+                    idx = int(index)  # type: ignore
+                except (ValueError, TypeError):
+                    idx = index
+                invalid_rules.append((idx, rule))
+        
         if invalid_rules:
             raise DatabaseValidationError(
                 f"Invalid size rules found: {invalid_rules[:10]}"
@@ -298,19 +310,30 @@ class DatabaseManager:
         df["Size"] = df["Size"].astype(str).str.strip()
 
     def _build_indexes(self, df: pd.DataFrame) -> None:
-        self._service_index = {
-            service_abbrev: group.reset_index(drop=True)
-            for service_abbrev, group in df.groupby("Service_Abbv")
-        }
-        self._spec_index = {
-            spec_name.upper(): group.reset_index(drop=True)
-            for spec_name, group in df.groupby("Spec")
-        }
-        self._service_name_index = {
-            service_name.upper(): service_abbrev
-            for service_abbrev, group in self._service_index.items()
-            for service_name in group["Service"].astype(str).str.upper().unique()
-        }
+        # Build service index (Service_Abbv -> DataFrame)
+        service_idx_raw = {}
+        for service_abbrev, group in df.groupby("Service_Abbv"):
+            # Ensure key is a string
+            key = str(service_abbrev).strip().upper() if service_abbrev is not None else ""
+            service_idx_raw[key] = group.reset_index(drop=True)
+        self._service_index = service_idx_raw  # type: ignore
+        
+        # Build spec index (Spec -> DataFrame)
+        spec_idx_raw = {}
+        for spec_name, group in df.groupby("Spec"):
+            # Ensure key is a string and uppercase
+            key = str(spec_name).strip().upper() if spec_name is not None else ""
+            spec_idx_raw[key] = group.reset_index(drop=True)
+        self._spec_index = spec_idx_raw  # type: ignore
+        
+        # Build service name index (Service name -> Service_Abbv abbreviation)
+        service_name_idx_raw = {}
+        for service_abbrev, group in self._service_index.items():
+            for service_name in group["Service"].astype(str).str.upper().unique():
+                name_key = str(service_name).strip().upper() if service_name is not None else ""
+                if name_key:
+                    service_name_idx_raw[name_key] = str(service_abbrev).strip().upper()
+        self._service_name_index = service_name_idx_raw
 
     def query(self, service: str | None = None, size: float | None = None, spec: str | None = None) -> QueryResult:
         if not self.loaded:

@@ -7,6 +7,7 @@ Global configuration and application paths.
 =========================================================
 """
 
+import base64
 from pathlib import Path
 
 # -------------------------------------------------------
@@ -74,7 +75,24 @@ PAGE_TITLE = "PipingIQ Professional"
 WINDOW_TITLE = f"{APP_NAME} {VERSION}"
 
 LOGO = ASSETS / "PipingIQ_Logo.png"
-BACKGROUND = ASSETS / "background.jpg"
+BACKGROUND = ASSETS / "Banner.png"
+
+
+def get_background_image_base64():
+    """Load background image and encode as base64 data URI."""
+    try:
+        bg_path = ASSETS / "Banner.png"
+        if bg_path.exists():
+            with open(bg_path, "rb") as f:
+                img_data = base64.b64encode(f.read()).decode()
+            return f"data:image/png;base64,{img_data}"
+    except Exception:
+        pass
+    # Return empty string if image not found
+    return ""
+
+
+BACKGROUND_DATA_URI = get_background_image_base64()
 
 BUTTON_COLOR = "#0F4C93"
 BUTTON_TEXT_COLOR = "#FFFFFF"

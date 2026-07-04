@@ -9,7 +9,7 @@ import streamlit as st
 from collections.abc import Mapping
 from config import (
     APP_NAME,
-    BACKGROUND,
+    BACKGROUND_DATA_URI,
     BUTTON_COLOR,
     BUTTON_TEXT_COLOR,
     CARD_BACKGROUND,
@@ -48,11 +48,11 @@ def setup_page():
                 left: 0;
                 width: 100%;
                 height: 100%;
-                background-image: url('{BACKGROUND.as_posix()}');
+                background-image: url('{BACKGROUND_DATA_URI}');
                 background-size: cover;
                 background-position: center;
                 background-attachment: fixed;
-                opacity: 0.22;
+                opacity: 0.25;
                 z-index: -1;
             }}
             .banner-hero {{
@@ -61,7 +61,7 @@ def setup_page():
                 padding: 0;
                 margin: 0 -16px -16px -16px;
                 margin-top: -1rem;
-                background-image: url('{BACKGROUND.as_posix()}');
+                background-image: url('{BACKGROUND_DATA_URI}');
                 background-size: cover;
                 background-position: center;
                 opacity: 0.95;

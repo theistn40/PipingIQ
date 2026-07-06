@@ -1,104 +1,130 @@
 """
-=========================================================
-PipingIQ Professional v6.0
-config.py
----------------------------------------------------------
-Global configuration and application paths.
-=========================================================
+Central configuration for the PipingIQ Phase 1 application.
+
+This module defines the frozen application paths, runtime file locations,
+application metadata, and UI presentation constants required by the approved
+PipingIQ architecture. It intentionally contains configuration data only.
 """
+
+from __future__ import annotations
 
 import base64
 from pathlib import Path
 
-# -------------------------------------------------------
-# Root
-# -------------------------------------------------------
+ROOT: Path = Path(__file__).resolve().parent.parent
 
-ROOT = Path(__file__).resolve().parent.parent
+# Frozen project directories
+ASSETS: Path = ROOT / "assets"
+CALCULATIONS: Path = ROOT / "calculations"
+DATA: Path = ROOT / "data"
+DATABASES: Path = ROOT / "databases"
+KNOWLEDGE: Path = ROOT / "knowledge"
+OUTPUT: Path = ROOT / "output"
+PROJECTS: Path = ROOT / "projects"
+SRC: Path = ROOT / "src"
 
-# -------------------------------------------------------
-# Directories
-# -------------------------------------------------------
+# Controlled subdirectories from the approved blueprint
+DATABASE_BACKUPS: Path = DATABASES / "backups"
+DATA_IMPORTS: Path = DATA / "imports"
+DATA_REJECTED: Path = DATA / "rejected"
+IMPORT_LOG_OUTPUT: Path = OUTPUT / "logs" / "imports"
 
-ASSETS = ROOT / "assets"
-CALCULATIONS = ROOT / "calculations"
-DATA = ROOT / "data"
-DATABASES = ROOT / "databases"
-KNOWLEDGE = ROOT / "knowledge"
-OUTPUT = ROOT / "output"
-PROJECTS = ROOT / "projects"
-SRC = ROOT / "src"
+# Engineering master and runtime database locations
+PIPE_SPEC_MASTER_WORKBOOK: Path = DATA / "PipeSpec_Master.xlsx"
+RUNTIME_DATABASE: Path = DATABASES / "PipingIQ.db"
 
-# -------------------------------------------------------
-# Primary Engineering Database
-# -------------------------------------------------------
+# Backward-compatible aliases currently used by existing modules
+PIPE_SPEC_DATABASE: Path = PIPE_SPEC_MASTER_WORKBOOK
+SQLITE_DATABASE: Path = RUNTIME_DATABASE
 
-PIPE_SPEC_DATABASE = DATA / "PipeSpec_Master.xlsx"
+# Future-ready workbook references retained for planned expansion
+VALVES_DB: Path = DATABASES / "Valves.xlsx"
+FLANGES_DB: Path = DATABASES / "Flanges.xlsx"
+FITTINGS_DB: Path = DATABASES / "Fittings.xlsx"
+SUPPORTS_DB: Path = DATABASES / "Supports.xlsx"
+MATERIALS_DB: Path = DATABASES / "Materials.xlsx"
+PRESSURE_DB: Path = DATABASES / "PressureRatings.xlsx"
 
-# -------------------------------------------------------
-# Future Databases
-# -------------------------------------------------------
+# Knowledge and output aliases used by the current application
+KNOWLEDGE_LIBRARY: Path = KNOWLEDGE
+REPORT_OUTPUT: Path = OUTPUT
 
-PIPE_DIMENSIONS_DB = DATABASES / "PipeDimensions.xlsx"
-VALVES_DB = DATABASES / "Valves.xlsx"
-FLANGES_DB = DATABASES / "Flanges.xlsx"
-FITTINGS_DB = DATABASES / "Fittings.xlsx"
-SUPPORTS_DB = DATABASES / "Supports.xlsx"
-MATERIALS_DB = DATABASES / "Materials.xlsx"
-PRESSURE_DB = DATABASES / "PressureRatings.xlsx"
+# Application metadata
+APP_NAME: str = "PipingIQ"
+VERSION: str = "1.0.0"
+AUTHOR: str = "Todd Theis"
+PAGE_TITLE: str = APP_NAME
+WINDOW_TITLE: str = f"{APP_NAME} {VERSION}"
 
-# -------------------------------------------------------
-# Knowledge Library
-# -------------------------------------------------------
-
-KNOWLEDGE_LIBRARY = KNOWLEDGE
-
-# -------------------------------------------------------
-# Output
-# -------------------------------------------------------
-
-REPORT_OUTPUT = OUTPUT
-
-# -------------------------------------------------------
-# Application
-# -------------------------------------------------------
-
-APP_NAME = "PipingIQ Professional"
-VERSION = "6.0"
-AUTHOR = "Todd Theis"
-PAGE_TITLE = "PipingIQ Professional"
-
-# -------------------------------------------------------
-# Display
-# -------------------------------------------------------
-
-WINDOW_TITLE = f"{APP_NAME} {VERSION}"
-
-LOGO = ASSETS / "PipingIQ_Logo.png"
-BACKGROUND = ASSETS / "Banner.png"
+# Visual asset paths
+LOGO: Path = ASSETS / "PipingIQ_Logo.png"
+BANNER_IMAGE: Path = ASSETS / "banner.png"
+BACKGROUND: Path = BANNER_IMAGE
 
 
-def get_background_image_base64():
-    """Load background image and encode as base64 data URI."""
-    try:
-        bg_path = ASSETS / "Banner.png"
-        if bg_path.exists():
-            with open(bg_path, "rb") as f:
-                img_data = base64.b64encode(f.read()).decode()
-            return f"data:image/png;base64,{img_data}"
-    except Exception:
-        pass
-    # Return empty string if image not found
-    return ""
+def _build_image_data_uri(image_path: Path) -> str:
+    """Return a PNG image as a base64 data URI when the asset exists."""
+    if not image_path.is_file():
+        return ""
+
+    encoded_bytes = base64.b64encode(image_path.read_bytes())
+    encoded_text = encoded_bytes.decode("ascii")
+    return f"data:image/png;base64,{encoded_text}"
 
 
-BACKGROUND_DATA_URI = get_background_image_base64()
+BACKGROUND_DATA_URI: str = _build_image_data_uri(BACKGROUND)
 
-BUTTON_COLOR = "#0F4C93"
-BUTTON_TEXT_COLOR = "#FFFFFF"
-CARD_BACKGROUND = "#10223E"
-LABEL_COLOR = "#A8D1FF"
-VALUE_COLOR = "#E9F4FF"
-ANSWER_COLOR = "#A2D9FF"
-TEXT_COLOR = "#EDF5FF"
-SECTION_HEADER_COLOR = "#69A5FF"
+# UI palette
+BUTTON_COLOR: str = "#0F4C93"
+BUTTON_TEXT_COLOR: str = "#FFFFFF"
+CARD_BACKGROUND: str = "#10223E"
+LABEL_COLOR: str = "#A8D1FF"
+VALUE_COLOR: str = "#E9F4FF"
+ANSWER_COLOR: str = "#A2D9FF"
+TEXT_COLOR: str = "#EDF5FF"
+SECTION_HEADER_COLOR: str = "#69A5FF"
+
+__all__ = [
+    "ANSWER_COLOR",
+    "APP_NAME",
+    "ASSETS",
+    "AUTHOR",
+    "BACKGROUND",
+    "BANNER_IMAGE",
+    "BACKGROUND_DATA_URI",
+    "BUTTON_COLOR",
+    "BUTTON_TEXT_COLOR",
+    "CALCULATIONS",
+    "CARD_BACKGROUND",
+    "DATA",
+    "DATABASE_BACKUPS",
+    "DATABASES",
+    "DATA_IMPORTS",
+    "DATA_REJECTED",
+    "FITTINGS_DB",
+    "FLANGES_DB",
+    "IMPORT_LOG_OUTPUT",
+    "KNOWLEDGE",
+    "KNOWLEDGE_LIBRARY",
+    "LABEL_COLOR",
+    "LOGO",
+    "MATERIALS_DB",
+    "OUTPUT",
+    "PAGE_TITLE",
+    "PIPE_SPEC_DATABASE",
+    "PIPE_SPEC_MASTER_WORKBOOK",
+    "PRESSURE_DB",
+    "PROJECTS",
+    "REPORT_OUTPUT",
+    "ROOT",
+    "RUNTIME_DATABASE",
+    "SECTION_HEADER_COLOR",
+    "SRC",
+    "SQLITE_DATABASE",
+    "SUPPORTS_DB",
+    "TEXT_COLOR",
+    "VALVES_DB",
+    "VALUE_COLOR",
+    "VERSION",
+    "WINDOW_TITLE",
+]

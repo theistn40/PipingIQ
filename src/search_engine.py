@@ -14,6 +14,14 @@ from parser import FIELD_WORDS, parse_question
 
 
 BASE_COLUMNS = {"Spec", "Service", "Service_Abbv", "Size"}
+INTERNAL_COLUMNS = BASE_COLUMNS | {
+    "library_name",
+    "library_type",
+    "client_name",
+    "project_name",
+    "import_batch_id",
+    "is_active",
+}
 
 
 def normalize_search_text(text: str) -> str:
@@ -55,7 +63,7 @@ def infer_field_from_dataframe(df: Any, question: str) -> str | None:
     candidates: list[tuple[int, int, int, str]] = []
 
     for field_name in df.columns:
-        if field_name in BASE_COLUMNS:
+        if field_name in INTERNAL_COLUMNS:
             continue
 
         best_score = 0
@@ -184,7 +192,7 @@ def search(db: Any, question: str) -> dict[str, Any]:
                         "spec": row["Spec"],
                         "service": row["Service"],
                         "size_rule": row["Size"],
-                        **{k: row.get(k, "") for k in df.columns},
+                        **{k: row.get(k, "") for k in df.columns if k not in INTERNAL_COLUMNS},
                     }
                 )
 

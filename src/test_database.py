@@ -178,7 +178,7 @@ def test_plural_spec_queries_return_all_matching_service_rows(tmp_path):
     assert {row["spec"] for row in result["results"]} == {"FO-1", "FO-2"}
 
 
-def test_codes_and_standards_returns_pipe_values_for_service(tmp_path):
+def test_non_pipe_modules_return_phase1_message(tmp_path):
     df = pd.DataFrame([
         {"Spec": "FO-1", "Service": "Fuel Oil", "Service_Abbv": "FO", "Size": "<=2", "Pipe": "Copper"},
         {"Spec": "FO-2", "Service": "Fuel Oil", "Service_Abbv": "FO", "Size": ">2", "Pipe": "Steel"},
@@ -187,8 +187,7 @@ def test_codes_and_standards_returns_pipe_values_for_service(tmp_path):
     df.to_excel(file_path, index=False)
 
     manager = DatabaseManager(path=file_path, autoload=True)
-    result = route_query("fo", "Codes & Standards", manager)
+    result = route_query("fo", "Knowledge Library", manager)
 
-    assert result["success"]
-    assert len(result["results"]) == 2
-    assert {row["value"] for row in result["results"]} == {"Copper", "Steel"}
+    assert not result["success"]
+    assert "Phase 1 supports Standard Pipe Specification lookup only." in result["message"]

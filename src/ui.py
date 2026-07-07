@@ -23,14 +23,13 @@ from config import (
 
 MODULES = [
     "Pipe Specifications",
-    "Codes & Standards",
-    "Pipe Supports",
-    "Dimensions & Engineering Data",
-    "Material Takeoffs",
-    "Cost Estimating",
-    "AI Search & Knowledge Base",
-    "Engineering Calculations",
+    "Engineering Calculators",
+    "Knowledge Library",
+    "Projects",
+    "Settings",
+    "About",
 ]
+ACTIVE_MODULE = "Pipe Specifications"
 
 
 def setup_page():
@@ -385,86 +384,42 @@ def render_footer():
 
 def render_module_details(selected_module: str):
     """Render a compact module details card."""
-    if selected_module == "Pipe Specifications":
+    if selected_module == ACTIVE_MODULE:
         st.markdown(f"<div class='module-card'><strong style='color:#A2D9FF;'>{selected_module}</strong> • <span style='color:rgba(255,255,255,0.8); font-size:12px;'>Search database by service, size, and field</span><span style='display:inline-block; color:#70A9FF; font-weight:700; padding:2px 8px; border-radius:8px; background: rgba(112,169,255,0.15); border: 1px solid rgba(112,169,255,0.3); font-size:10px; margin-left:8px;'>Active</span></div>", unsafe_allow_html=True)
-    elif selected_module == "Codes & Standards":
-        st.markdown(f"<div class='module-card'><strong style='color:#A2D9FF;'>{selected_module}</strong> • <span style='color:rgba(255,255,255,0.8); font-size:12px;'>Lookup service-related standards</span><span style='display:inline-block; color:#70A9FF; font-weight:700; padding:2px 8px; border-radius:8px; background: rgba(112,169,255,0.15); border: 1px solid rgba(112,169,255,0.3); font-size:10px; margin-left:8px;'>Active</span></div>", unsafe_allow_html=True)
     else:
-        st.markdown(f"<div class='module-card'><strong style='color:#A2D9FF;'>{selected_module}</strong></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='module-card'><strong style='color:#A2D9FF;'>{selected_module}</strong> • <span style='color:rgba(255,255,255,0.8); font-size:12px;'>Reserved in the frozen architecture for a later phase</span><span style='display:inline-block; color:#B8C7DA; font-weight:700; padding:2px 8px; border-radius:8px; background: rgba(184,199,218,0.12); border: 1px solid rgba(184,199,218,0.22); font-size:10px; margin-left:8px;'>Coming Soon</span></div>", unsafe_allow_html=True)
 
 
-def render_main_screen(service_options: list[tuple[str, str]] | None = None, dimension_item_options: list[str] | None = None):
+def render_main_screen():
     """Render main screen with sidebar and search panel."""
     
     # Initialize session state
     if "selected_module" not in st.session_state:
-        st.session_state["selected_module"] = "Pipe Specifications"
+        st.session_state["selected_module"] = ACTIVE_MODULE
     
     # Sidebar: module buttons as transparent hotspots over the image's left panel
     with st.sidebar:
-        selected_module = st.session_state.get("selected_module", "Pipe Specifications")
+        selected_module = st.session_state.get("selected_module", ACTIVE_MODULE)
         for i, module in enumerate(MODULES):
             if st.button(module, key=f"module_{i}", use_container_width=True):
                 st.session_state["selected_module"] = module
                 st.rerun()
 
-    selected_module = st.session_state.get("selected_module", "Pipe Specifications")
+    selected_module = st.session_state.get("selected_module", ACTIVE_MODULE)
 
-    # Three-column layout: search | OR gap (transparent) | upload
-    # Banner proportions: search≈55%, OR gap≈8%, upload≈35% of main area
-    col_search, col_or, col_upload = st.columns([55, 8, 35])
-
-    with col_search:
-        # Input + Search button inline (8:1 ratio to match image's wide input)
-        subcol_input, subcol_btn = st.columns([8, 1])
-        with subcol_input:
-            question = st.text_input(
-                label="Search",
-                placeholder="Ask a question about piping, codes, specs, supports, materials...",
-                key="search_box",
-                label_visibility="collapsed",
-            )
-        with subcol_btn:
-            search_clicked = st.button("Search", use_container_width=True, key="search_btn")
-
-    with col_or:
-        pass  # transparent gap — image's "OR" text shows through
-
-    with col_upload:
-        uploaded_file = st.file_uploader(
-            label="Upload a document",
-            type=["pdf", "docx", "xlsx", "png", "jpg", "jpeg"],
-            key="upload_file",
+    subcol_input, subcol_btn = st.columns([8, 1])
+    with subcol_input:
+        question = st.text_input(
+            label="Search",
+            placeholder='Ask a pipe spec question, for example: What flange do I use for 3" STM LP?',
+            key="search_box",
             label_visibility="collapsed",
         )
+    with subcol_btn:
+        search_clicked = st.button("Search", use_container_width=True, key="search_btn")
 
-    # Additional inputs for specific modules (shown below search row)
-    service_input = ""
-    size_input = ""
-    dimension_item = ""
-    ai_lookup_clicked = False
-
-    if selected_module == "Dimensions & Engineering Data":
-        dcol1, dcol2 = st.columns([2, 1])
-        with dcol1:
-            dimension_item = st.selectbox(
-                label="Dimension item",
-                options=[""] + (dimension_item_options or []),
-                key="dimension_item_input",
-            )
-        with dcol2:
-            size_input = st.text_input(label="Size", key="dimension_size_input", placeholder="e.g. 1 1/2")
-    
-    return (
-        selected_module,
-        question or "",
-        uploaded_file,
-        search_clicked,
-        service_input or "",
-        size_input or "",
-        dimension_item or "",
-        ai_lookup_clicked,
-    )
+    render_module_details(selected_module)
+    return selected_module, question or "", search_clicked
 
 
 def render_results(results):
@@ -537,7 +492,26 @@ def render_result_card(result):
     st.markdown("<hr style='border-color: rgba(255,255,255,0.14);'>", unsafe_allow_html=True)
 
     for key, value in data.items():
-        if key in {"Spec", "spec", "Service", "service", "Service_Abbv", "service_abbv", "Size", "size_rule", "field", "value", "Item", item_name}:
+        if key in {
+            "Spec",
+            "spec",
+            "Service",
+            "service",
+            "Service_Abbv",
+            "service_abbv",
+            "Size",
+            "size_rule",
+            "field",
+            "value",
+            "Item",
+            item_name,
+            "library_name",
+            "library_type",
+            "client_name",
+            "project_name",
+            "import_batch_id",
+            "is_active",
+        }:
             continue
         if str(key).startswith("Unnamed"):
             continue
@@ -591,3 +565,41 @@ def render_answer_panel():
             render_result_card(result)
             if i < len(results) - 1:
                 st.divider()
+
+
+def run_application():
+    from database import DatabaseError, DatabaseManager
+    from knowledge_router import route_query
+
+    if "show_modal" not in st.session_state:
+        st.session_state["show_modal"] = False
+    if "modal_results" not in st.session_state:
+        st.session_state["modal_results"] = None
+
+    setup_page()
+    render_header()
+
+    try:
+        db = DatabaseManager()
+    except DatabaseError as exc:
+        st.error(str(exc))
+        st.stop()
+    except Exception as exc:
+        st.error(f"Unable to initialize the database: {exc}")
+        st.stop()
+
+    selected_module, question, search_clicked = render_main_screen()
+
+    if search_clicked:
+        if not question.strip():
+            st.warning("Please enter a Pipe Specifications question before searching.")
+        else:
+            st.divider()
+            result = route_query(question, selected_module, db)
+            if result["success"]:
+                st.success(result.get("message") or "Answer Found")
+                render_results(result.get("results", [result]))
+            else:
+                st.error(result["message"])
+
+    render_answer_panel()

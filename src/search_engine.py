@@ -83,8 +83,10 @@ def infer_field_from_dataframe(df: Any, question: str) -> str | None:
     if not candidates:
         return None
 
-    candidates.sort(reverse=True)
-    return candidates[0][3]
+    candidates.sort(
+        key=lambda candidate: candidate[0],
+        reverse=True,
+    )
 
 
 def infer_service_from_dataframe(df: Any, question: str) -> tuple[str, str] | None:
@@ -100,11 +102,14 @@ def infer_service_from_dataframe(df: Any, question: str) -> tuple[str, str] | No
             continue
 
         best_score = 0
+        has_token_match = False
 
         if service_abbv:
             abb_normalized = normalize_search_text(service_abbv)
             abb_tokens = abb_normalized.split()
-            if abb_normalized and abb_normalized in q_normalized:
+            if abb_tokens and set(abb_tokens).intersection(q_tokens):
+                has_token_match = True
+            if abb_normalized and abb_normalized in q_tokens:
                 best_score = max(best_score, 120 + len(abb_tokens))
             elif abb_tokens and set(abb_tokens).issubset(q_tokens):
                 best_score = max(best_score, 70 + len(abb_tokens))
@@ -112,17 +117,23 @@ def infer_service_from_dataframe(df: Any, question: str) -> tuple[str, str] | No
         if service_name:
             service_normalized = normalize_search_text(service_name)
             service_tokens = service_normalized.split()
+            shared_tokens = set(service_tokens).intersection(q_tokens)
+            if shared_tokens:
+                has_token_match = True
             if service_normalized and service_normalized in q_normalized:
                 best_score = max(best_score, 110 + len(service_tokens))
             elif service_tokens and set(service_tokens).issubset(q_tokens):
                 best_score = max(best_score, 60 + len(service_tokens))
+            elif shared_tokens:
+                best_score = max(best_score, 40 + len(shared_tokens))
 
-        if best_score:
+        if best_score or has_token_match:
             candidates.append((best_score, len(normalize_search_text(service_name).split()), len(service_name), service_name, service_abbv))
 
     if not candidates:
         return None
 
+    print(candidates)
     candidates.sort(reverse=True)
     _, _, _, service_name, service_abbv = candidates[0]
     return service_name, service_abbv
@@ -177,7 +188,14 @@ def search(db: Any, question: str) -> dict[str, Any]:
         if service_match is None:
             return {"success": False, "message": "I cannot determine the piping service."}
 
-        rows = filter_rows_for_service(df, service_match)
+        debug_rows = filter_rows_for_service(df, service_match)
+        print(
+            f"[search debug] question={question!r} "
+            f"parsed_service={parsed['service']!r} "
+            f"service_match={service_match!r} "
+            f"filtered_row_count={len(debug_rows)}"
+        )
+        rows = debug_rows
         if rows.empty:
             return {"success": False, "message": "Service not found."}
 
@@ -222,7 +240,14 @@ def search(db: Any, question: str) -> dict[str, Any]:
             "message": "I cannot determine the piping service.",
         }
 
-    rows = filter_rows_for_service(df, service_match)
+    debug_rows = filter_rows_for_service(df, service_match)
+    print(
+        f"[search debug] question={question!r} "
+        f"parsed_service={parsed['service']!r} "
+        f"service_match={service_match!r} "
+        f"filtered_row_count={len(debug_rows)}"
+    )
+    rows = debug_rows
     if rows.empty:
         return {
             "success": False,

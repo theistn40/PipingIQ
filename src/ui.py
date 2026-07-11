@@ -1,583 +1,534 @@
 """
-=========================================================
-PipingIQ Professional v6.0
-User Interface Layer
-=========================================================
+PipingIQ engineering test interface.
+
+This module is intentionally limited to Streamlit presentation. Backend search,
+database access, parsing, and routing remain delegated to the existing modules.
 """
 
-import streamlit as st
+from __future__ import annotations
+
+import html
+import re
 from collections.abc import Mapping
-from config import (
-    APP_NAME,
-    BACKGROUND_DATA_URI,
-    BUTTON_COLOR,
-    BUTTON_TEXT_COLOR,
-    CARD_BACKGROUND,
-    LABEL_COLOR,
-    VALUE_COLOR,
-    ANSWER_COLOR,
-    TEXT_COLOR,
-    SECTION_HEADER_COLOR,
-    VERSION,
-)
+from pathlib import Path
+from typing import Any
 
-MODULES = [
-    "Pipe Specifications",
-    "Engineering Calculators",
-    "Knowledge Library",
+import pandas as pd
+import streamlit as st
+
+from config import APP_NAME, DATA_IMPORTS, KNOWLEDGE_LIBRARY, VERSION
+
+
+NAVIGATION_ITEMS = [
+    "Home",
+    "Engineering Reference",
+    "Engineering Calculations",
+    "Pipe Supports",
+    "Pipe Stress",
+    "Estimating",
     "Projects",
+    "AI Assistant",
     "Settings",
-    "About",
 ]
-ACTIVE_MODULE = "Pipe Specifications"
+
+WORKSPACE_TABS = [
+    "Specification",
+    "Dimensions",
+    "Calculations",
+    "Standards",
+    "Sources",
+    "Notes",
+]
+
+ROUTE_MODULE_BY_NAV = {
+    "Home": "Pipe Specifications",
+    "Engineering Reference": "Pipe Specifications",
+    "Engineering Calculations": "Engineering Calculators",
+    "Pipe Supports": "Pipe Supports",
+    "Pipe Stress": "Pipe Stress",
+    "Estimating": "Estimating",
+    "Projects": "Projects",
+    "AI Assistant": "Knowledge Library",
+    "Settings": "Settings",
+}
+
+PIPE_SPECIFICATIONS_MODULE = "Pipe Specifications"
+
+INTERNAL_FIELDS = {
+    "success",
+    "results",
+    "message",
+    "library_name",
+    "library_type",
+    "client_name",
+    "project_name",
+    "import_batch_id",
+    "is_active",
+}
+
+DISPLAY_LABELS = {
+    "spec": "Specification",
+    "Spec": "Specification",
+    "service": "Service",
+    "Service": "Service",
+    "service_abbv": "Service Abbreviation",
+    "Service_Abbv": "Service Abbreviation",
+    "size_rule": "Size Rule",
+    "Size": "Size Rule",
+    "Fitting": "Fittings",
+    "MAXIMUM PRESSURE (PSI)": "Maximum Pressure",
+    "MAXIMUM TEMPERATURE (F)": "Maximum Temperature",
+}
+
+FULL_SPEC_EXCLUDED_FIELDS = {
+    "service_abbv",
+    "Service_Abbv",
+    "size_rule",
+    "Size",
+    "field",
+    "value",
+}
+
+SPEC_CODE_PATTERN = re.compile(r"^[A-Za-z0-9]+(?:[-_/][A-Za-z0-9]+)+$")
 
 
-def setup_page():
-    st.set_page_config(page_title=APP_NAME, layout="wide", initial_sidebar_state="expanded")
+def setup_page() -> None:
+    st.set_page_config(page_title=APP_NAME, layout="wide", initial_sidebar_state="collapsed")
     st.markdown(
-        f"""
+        """
         <style>
-            /* ── Hide Streamlit chrome ── */
-            #MainMenu {{ visibility: hidden !important; }}
-            footer {{ visibility: hidden !important; }}
-            header[data-testid="stHeader"] {{ display: none !important; }}
-            [data-testid="stDecoration"] {{ display: none !important; }}
-            [data-testid="stToolbar"] {{ display: none !important; }}
-            [data-testid="stSidebarCollapseButton"] {{ display: none !important; }}
-            [data-testid="stSidebarResizeHandle"] {{ display: none !important; }}
-            [data-testid="collapsedControl"] {{ display: none !important; }}
-
-            /* ── Background: Banner.png at 100% width, scales proportionally ── */
-            .stApp {{
-                background: url('{BACKGROUND_DATA_URI}') top left / 100% auto no-repeat !important;
-                background-color: #010c22 !important;
-            }}
-            
-            .sidebar-module {{
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 8px;
-                padding: 12px 8px;
-                margin-bottom: 8px;
-                background: rgba(70, 130, 220, 0.15);
-                border: 1.5px solid rgba(70, 130, 220, 0.4);
-                border-radius: 12px;
-                text-align: center;
-                font-weight: 600;
-                color: #7EC8FF;
-                font-size: 11px;
-                letter-spacing: 0.5px;
-            }}
-            
-            .sidebar-label {{
-                font-size: 10px;
-                line-height: 1.2;
-                text-transform: uppercase;
-            }}
-            
-            .module-card {{
-                background: rgba(10, 28, 60, 0.8);
-                padding: 12px;
-                border-radius: 12px;
-                border: 1px solid rgba(112, 169, 255, 0.3);
-                margin-bottom: 8px;
-                background-image: linear-gradient(135deg, rgba(26, 95, 210, 0.1) 0%, rgba(112, 169, 255, 0.05) 100%);
-            }}
-            
-            .answer-modal {{
-                position: fixed;
-                top: 50%;
-                left: 50%;
-                transform: translate(-50%, -50%);
-                background: rgba(5, 15, 35, 0.98);
-                border: 2px solid rgba(70, 130, 220, 0.5);
-                border-radius: 20px;
-                padding: 32px;
-                max-height: 85vh;
-                max-width: 900px;
-                width: 90%;
-                z-index: 9999;
-                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.1);
-                overflow-y: auto;
-            }}
-            
-            .modal-overlay {{
-                position: fixed;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                background: rgba(0, 0, 0, 0.7);
-                z-index: 9998;
-            }}
-            
-            .modal-close-btn {{
-                position: absolute;
-                top: 16px;
-                right: 16px;
-                background: rgba(70, 130, 220, 0.2);
-                border: 1px solid rgba(70, 130, 220, 0.4);
-                color: #70A9FF;
-                padding: 8px 12px;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 16px;
-                font-weight: bold;
-                transition: all 0.3s ease;
-            }}
-            
-            .modal-close-btn:hover {{
-                background: rgba(70, 130, 220, 0.3);
-                border-color: rgba(70, 130, 220, 0.6);
-            }}
-            
-            .result-card {{
-                background: rgba(10, 30, 60, 0.6);
-                border: 1px solid rgba(70, 130, 220, 0.3);
-                border-radius: 16px;
-                padding: 20px;
-                margin-bottom: 16px;
-            }}
-            
-            .result-spec {{
-                color: #70A9FF;
-                font-weight: 700;
-                font-size: 15px;
-                margin-bottom: 12px;
-            }}
-            
-            .result-field {{
-                color: rgba(255, 255, 255, 0.9);
-                margin-bottom: 8px;
-                font-size: 13px;
-                line-height: 1.6;
-            }}
-            
-            .result-label {{
-                color: #A2D9FF;
-                font-weight: 600;
-                display: inline-block;
-                margin-right: 8px;
-            }}
-            
-            /* ── Main content: aligned to image search row ── */
-            /* Banner 1320×786; search input at y≈422 → (422/786)×59.55vw ≈ 32vw */
-            .main, [data-testid="stMain"], .stMain,
-            .appview-container .main,
-            section.main {{
-                padding-top: 0 !important;
-                margin-top: 0 !important;
-            }}
-            .block-container {{
-                padding-top: 25vw !important;
-                padding-left: 1.5rem !important;
-                padding-right: 1.5rem !important;
-                padding-bottom: 2rem !important;
-                max-width: 100% !important;
-                background: transparent !important;
-            }}
-
-            /* Eliminate Streamlit's internal top spacing on columns */
-            [data-testid="stHorizontalBlock"] {{
-                align-items: flex-start !important;
-            }}
-            [data-testid="stColumn"] > div:first-child,
-            [data-testid="stVerticalBlock"] > div:first-child {{
-                margin-top: 0 !important;
-                padding-top: 0 !important;
-            }}
-            .element-container:first-child {{
-                margin-top: 0 !important;
-            }}
-
-            /* ── Sidebar: transparent, width matches image left panel (~18% of image width) ── */
-            section[data-testid="stSidebar"] {{
-                background: transparent !important;
-                border: none !important;
-                box-shadow: none !important;
-                width: 18vw !important;
-                min-width: 180px !important;
-                max-width: 280px !important;
-            }}
-
-            /* ── Sidebar first module starts at y≈90/786×59.55vw ≈ 6.8vw ── */
-            section[data-testid="stSidebar"] > div:first-child {{
-                background: transparent !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                padding-top: 6.8vw !important;
-            }}
-
-            /* Hide any markdown labels in sidebar */
-            section[data-testid="stSidebar"] .stMarkdown {{ display: none !important; }}
-
-            /* Remove gaps between module buttons */
-            section[data-testid="stSidebar"] .element-container {{
-                padding: 0 !important;
-                margin: 0 !important;
-            }}
-            section[data-testid="stSidebar"] .stButton {{
-                padding: 0 !important;
-                margin: 0 !important;
-            }}
-
-            /* ── Module buttons: invisible transparent hotspots over image entries ── */
-            /* Each entry ≈ 80px/800 × 62.5vw ≈ 6.25vw tall */
-            section[data-testid="stSidebar"] .stButton > button {{
-                height: 6.5vw !important;
-                min-height: 50px !important;
-                max-height: 90px !important;
-                width: 100% !important;
-                background: transparent !important;
-                border: none !important;
-                border-radius: 0 !important;
-                color: transparent !important;
-                font-size: 0 !important;
-                line-height: 0 !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                box-shadow: none !important;
-                cursor: pointer !important;
-                display: block !important;
-                outline: none !important;
-                transition: background 0.15s ease, box-shadow 0.15s ease !important;
-            }}
-
-            section[data-testid="stSidebar"] .stButton > button:hover {{
-                background: rgba(40, 110, 255, 0.28) !important;
-                box-shadow: inset 4px 0 0 rgba(80, 160, 255, 0.9) !important;
-            }}
-
-            section[data-testid="stSidebar"] .stButton > button:focus {{
-                outline: none !important;
-                background: rgba(20, 80, 220, 0.35) !important;
-                box-shadow: inset 5px 0 0 #5599ff !important;
-            }}
-
-            /* ── Search text input ── */
-            .stTextInput > div > div > input {{
-                background: rgba(255, 255, 255, 0.96) !important;
-                border: 1.5px solid rgba(80, 140, 255, 0.3) !important;
-                border-radius: 8px !important;
-                color: #0b1830 !important;
-                font-size: 15px !important;
-                padding: 10px 16px !important;
-            }}
-            .stTextInput > label {{ display: none !important; }}
-
-            /* ── Search & action buttons in main area ── */
-            [data-testid="stMain"] .stButton > button {{
-                background: #0f4c93 !important;
-                color: #ffffff !important;
-                border: none !important;
-                border-radius: 8px !important;
-                font-weight: 700 !important;
-                font-size: 14px !important;
-            }}
-            [data-testid="stMain"] .stButton > button:hover {{
-                background: #1a5fd4 !important;
-            }}
-
-            /* ── File uploader: match image's drag-drop box ── */
-            /* Upload box height: (535-420)/786 × 59.55vw ≈ 8.7vw */
-            /* Hide label - correct selector from DOM inspection */
-            [data-testid="stFileUploader"] [data-testid="stWidgetLabel"] {{
+            #MainMenu, footer, header[data-testid="stHeader"],
+            [data-testid="stDecoration"], [data-testid="stToolbar"],
+            [data-testid="collapsedControl"] {
                 display: none !important;
-            }}
-            /* Style dropzone - DOM has section[data-testid="stFileUploaderDropzone"] */
-            [data-testid="stFileUploader"] section[data-testid="stFileUploaderDropzone"],
-            [data-testid="stFileUploader"] section[role="presentation"] {{
-                background: rgba(4, 16, 52, 0.70) !important;
-                border: 2px dashed rgba(80, 148, 255, 0.72) !important;
-                border-radius: 10px !important;
-                height: 8.7vw !important;
-                min-height: 100px !important;
-                width: 100% !important;
-                box-sizing: border-box !important;
-            }}
-            [data-testid="stFileUploader"] {{
-                height: 8.7vw !important;
-                min-height: 100px !important;
-            }}
+            }
 
-            /* ── Answer/results container ── */
-            [data-testid="stVerticalBlockBorderWrapper"] {{
-                background: rgba(4, 14, 42, 0.90) !important;
-                border: 1px solid rgba(70, 130, 255, 0.4) !important;
-                border-radius: 12px !important;
-            }}
+            .stApp {
+                background: #f4f6f8;
+                color: #17212b;
+            }
 
-            /* ── Alerts and status ── */
-            .stAlert {{
-                background: rgba(5, 18, 50, 0.88) !important;
+            .block-container {
+                max-width: 1500px;
+                padding: 1.25rem 1.5rem 1rem;
+            }
+
+            h1, h2, h3, p, label {
+                color: #17212b !important;
+            }
+
+            .piq-title {
+                text-align: center;
+                padding: 0.35rem 0 0.2rem;
+                border-bottom: 1px solid #d4dae1;
+                margin-bottom: 0.75rem;
+            }
+
+            .piq-title h1 {
+                margin: 0;
+                font-size: 2rem;
+                line-height: 1.15;
+                font-weight: 700;
+            }
+
+            .piq-title p {
+                margin: 0.2rem 0 0.5rem;
+                color: #52616f !important;
+                font-size: 0.95rem;
+            }
+
+            .section-label {
+                color: #334252;
+                font-weight: 700;
+                font-size: 0.85rem;
+                letter-spacing: 0.02em;
+                margin: 0.15rem 0 0.4rem;
+            }
+
+            .stButton > button {
+                border-radius: 6px !important;
+                border: 1px solid #b9c3cf !important;
+                background: #ffffff !important;
+                color: #17212b !important;
+                font-weight: 600 !important;
+            }
+
+            .stButton > button:hover {
+                border-color: #386fa4 !important;
+                color: #173f66 !important;
+            }
+
+            div[data-testid="stTextInput"] input {
+                border-radius: 6px;
+                border: 1px solid #aeb8c3;
+                background: #ffffff;
+                color: #17212b;
+            }
+
+            div[data-testid="stVerticalBlockBorderWrapper"] {
+                border-color: #d4dae1 !important;
                 border-radius: 8px !important;
-            }}
+                background: #ffffff;
+            }
 
-            /* ── Text colors ── */
-            p, h1, h2, h3, h4, h5, label {{
-                color: {TEXT_COLOR} !important;
-            }}
+            .status-bar {
+                display: grid;
+                grid-template-columns: repeat(4, minmax(0, 1fr));
+                gap: 0.75rem;
+                margin-top: 0.85rem;
+                padding: 0.75rem;
+                border: 1px solid #d4dae1;
+                border-radius: 8px;
+                background: #ffffff;
+                color: #17212b;
+                font-size: 0.85rem;
+            }
 
-            /* ── Selectbox ── */
-            .stSelectbox > div > div {{
-                background: rgba(255, 255, 255, 0.92) !important;
-                color: #0b1830 !important;
-            }}
-
-            /* Legacy classes kept for result cards */
-            .module-card {{
-                background: rgba(10, 28, 60, 0.8);
-                padding: 12px;
-                border-radius: 12px;
-                border: 1px solid rgba(112, 169, 255, 0.3);
-                margin-bottom: 8px;
-            }}
+            .status-item strong {
+                color: #52616f;
+                display: block;
+                font-size: 0.72rem;
+                text-transform: uppercase;
+                letter-spacing: 0.04em;
+            }
         </style>
         """,
         unsafe_allow_html=True,
     )
 
 
-def render_sidebar():
-    """Render left sidebar with module buttons and icons."""
-    modules_html = '<div class="sidebar-container">'
-    
-    for module in MODULES:
-        icon = ICONS.get(module, "📦")
-        modules_html += f'''
-        <div class="sidebar-module" title="{module}">
-            <div class="sidebar-icon">{icon}</div>
-            <div class="sidebar-label">{module.replace(" & ", "&<br/>")}</div>
-        </div>
-        '''
-    
-    modules_html += '</div>'
-    st.markdown(modules_html, unsafe_allow_html=True)
+def _clean_text(value: Any) -> str:
+    if value is None:
+        return ""
+    text = html.unescape(str(value))
+    text = re.sub(r"<[^>]*>", "", text)
+    return " ".join(text.replace("\xa0", " ").split())
 
 
-def render_hero_section():
-    """Render professional hero header section."""
-    st.markdown(
-        """
-        <div class="main-content">
-            <div class="hero-section">
-                <div class="hero-logo">PipingIQ</div>
-                <div class="hero-tagline">ENGINEERING INTELLIGENCE PLATFORM</div>
-                <div class="hero-subtitle">Professional Engineering Application for Piping Design, Specifications, Codes & Estimating</div>
-                <div class="hero-desc">ONE APPLICATION. COMPLETE PIPING ENGINEERING KNOWLEDGE.</div>
-            </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def render_header():
-    """Header is provided by the background image."""
-    pass
-
-
-def render_footer():
-    """Footer is provided by the background image."""
-    pass
-
-
-def render_module_details(selected_module: str):
-    """Render a compact module details card."""
-    if selected_module == ACTIVE_MODULE:
-        st.markdown(f"<div class='module-card'><strong style='color:#A2D9FF;'>{selected_module}</strong> • <span style='color:rgba(255,255,255,0.8); font-size:12px;'>Search database by service, size, and field</span><span style='display:inline-block; color:#70A9FF; font-weight:700; padding:2px 8px; border-radius:8px; background: rgba(112,169,255,0.15); border: 1px solid rgba(112,169,255,0.3); font-size:10px; margin-left:8px;'>Active</span></div>", unsafe_allow_html=True)
-    else:
-        st.markdown(f"<div class='module-card'><strong style='color:#A2D9FF;'>{selected_module}</strong> • <span style='color:rgba(255,255,255,0.8); font-size:12px;'>Reserved in the frozen architecture for a later phase</span><span style='display:inline-block; color:#B8C7DA; font-weight:700; padding:2px 8px; border-radius:8px; background: rgba(184,199,218,0.12); border: 1px solid rgba(184,199,218,0.22); font-size:10px; margin-left:8px;'>Coming Soon</span></div>", unsafe_allow_html=True)
-
-
-def render_main_screen():
-    """Render main screen with sidebar and search panel."""
-    
-    # Initialize session state
-    if "selected_module" not in st.session_state:
-        st.session_state["selected_module"] = ACTIVE_MODULE
-    
-    # Sidebar: module buttons as transparent hotspots over the image's left panel
-    with st.sidebar:
-        selected_module = st.session_state.get("selected_module", ACTIVE_MODULE)
-        for i, module in enumerate(MODULES):
-            if st.button(module, key=f"module_{i}", use_container_width=True):
-                st.session_state["selected_module"] = module
-                st.rerun()
-
-    selected_module = st.session_state.get("selected_module", ACTIVE_MODULE)
-
-    subcol_input, subcol_btn = st.columns([8, 1])
-    with subcol_input:
-        question = st.text_input(
-            label="Search",
-            placeholder='Ask a pipe spec question, for example: What flange do I use for 3" STM LP?',
-            key="search_box",
-            label_visibility="collapsed",
-        )
-    with subcol_btn:
-        search_clicked = st.button("Search", use_container_width=True, key="search_btn")
-
-    render_module_details(selected_module)
-    return selected_module, question or "", search_clicked
-
-
-def render_results(results):
-    """Render search results."""
-    if not results:
-        st.error("No matching specification found.")
-        return
-    
-    # Store results in session state to show modal
-    st.session_state["show_modal"] = True
-    st.session_state["modal_results"] = results
-    
-    st.success(f"Found {len(results)} matching specifications.")
-
-
-def render_result_card(result):
-    data = result
+def _result_to_mapping(result: Any) -> dict[str, Any]:
     if isinstance(result, Mapping):
-        data = result
-    else:
-        data = result.as_dict() if hasattr(result, "as_dict") else dict(result)
+        return dict(result)
+    if hasattr(result, "as_dict"):
+        return dict(result.as_dict())
+    try:
+        return dict(result)
+    except Exception:
+        return {"Answer": result}
 
-    st.markdown(
-        f"""
-        <div style="
-            background-color:{CARD_BACKGROUND};
-            padding:18px;
-            border-radius:18px;
-            margin-bottom:16px;
-            border:1px solid rgba(255,255,255,0.12);
-        ">
-        """,
-        unsafe_allow_html=True,
-    )
 
-    spec_value = data.get("Spec") or data.get("spec") or ""
-    service_value = data.get("Service") or data.get("service") or ""
-    service_abbv = data.get("Service_Abbv") or data.get("service_abbv") or ""
-    size_value = data.get("Size") or data.get("size_rule") or ""
-    answer_field = data.get("field")
-    answer_value = data.get("value")
-    item_name = data.get("Item") or data.get("item")
+def _display_label(key: str) -> str:
+    cleaned = _clean_text(key)
+    return DISPLAY_LABELS.get(cleaned, DISPLAY_LABELS.get(key, cleaned.replace("_", " ").title()))
 
-    if item_name:
-        item_value = data.get(item_name, "")
-        st.markdown(
-            f"<h3 style='color:{ANSWER_COLOR}; margin-bottom:8px;'>Dimension: {item_name} = {item_value}</h3>",
-            unsafe_allow_html=True,
-        )
-    elif answer_field and answer_value is not None:
-        st.markdown(
-            f"<h3 style='color:{ANSWER_COLOR}; margin-bottom:8px;'>Result: {answer_field} = {answer_value}</h3>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            f"<h3 style='color:{ANSWER_COLOR}; margin-bottom:8px;'>Specification: {spec_value}</h3>",
-            unsafe_allow_html=True,
-        )
 
-    if item_name:
-        st.markdown(f"<strong style='color:{LABEL_COLOR};'>Dimension Item:</strong> <span style='color:{VALUE_COLOR};'>{item_name}</span>", unsafe_allow_html=True)
-    if service_value:
-        st.markdown(f"<strong style='color:{LABEL_COLOR};'>Service:</strong> <span style='color:{VALUE_COLOR};'>{service_value}</span>", unsafe_allow_html=True)
-    if service_abbv:
-        st.markdown(f"<strong style='color:{LABEL_COLOR};'>Service Abbrev:</strong> <span style='color:{VALUE_COLOR};'>{service_abbv}</span>", unsafe_allow_html=True)
-    if size_value:
-        st.markdown(f"<strong style='color:{LABEL_COLOR};'>Size Rule:</strong> <span style='color:{VALUE_COLOR};'>{size_value}</span>", unsafe_allow_html=True)
-
-    st.markdown("<hr style='border-color: rgba(255,255,255,0.14);'>", unsafe_allow_html=True)
+def _is_full_spec_result(data: Mapping[str, Any]) -> bool:
+    specification = _clean_text(data.get("spec") or data.get("Spec"))
+    service = _clean_text(data.get("service") or data.get("Service"))
+    if not specification or not service:
+        return False
 
     for key, value in data.items():
-        if key in {
-            "Spec",
-            "spec",
-            "Service",
-            "service",
-            "Service_Abbv",
-            "service_abbv",
-            "Size",
-            "size_rule",
-            "field",
-            "value",
-            "Item",
-            item_name,
-            "library_name",
-            "library_type",
-            "client_name",
-            "project_name",
-            "import_batch_id",
-            "is_active",
-        }:
+        if key in INTERNAL_FIELDS or key in FULL_SPEC_EXCLUDED_FIELDS:
+            continue
+        if str(key).startswith("Unnamed") or key in {"spec", "Spec", "service", "Service"}:
+            continue
+        if _clean_text(value):
+            return True
+    return False
+
+
+def _result_rows(result: Any) -> list[dict[str, str]]:
+    data = _result_to_mapping(result)
+    rows: list[dict[str, str]] = []
+
+    if _is_full_spec_result(data):
+        specification = _clean_text(data.get("spec") or data.get("Spec"))
+        service = _clean_text(data.get("service") or data.get("Service"))
+        if specification:
+            rows.append({"Field": _display_label("spec"), "Value": specification})
+        if service:
+            rows.append({"Field": _display_label("service"), "Value": service})
+
+        for key, value in data.items():
+            if key in INTERNAL_FIELDS or key in FULL_SPEC_EXCLUDED_FIELDS:
+                continue
+            if str(key).startswith("Unnamed") or key in {"spec", "Spec", "service", "Service"}:
+                continue
+            cleaned = _clean_text(value)
+            if cleaned:
+                rows.append({"Field": _display_label(str(key)), "Value": cleaned})
+
+        return rows or [{"Field": "Answer", "Value": "No displayable fields returned."}]
+
+    primary_fields = [
+        (_display_label("spec"), data.get("spec") or data.get("Spec")),
+        (_display_label("service"), data.get("service") or data.get("Service")),
+        (_display_label("service_abbv"), data.get("service_abbv") or data.get("Service_Abbv")),
+        (_display_label("size_rule"), data.get("size_rule") or data.get("Size")),
+        ("Requested Field", data.get("field")),
+        ("Answer", data.get("value")),
+    ]
+
+    for label, value in primary_fields:
+        cleaned = _clean_text(value)
+        if cleaned:
+            rows.append({"Field": label, "Value": cleaned})
+
+    for key, value in data.items():
+        if key in INTERNAL_FIELDS:
             continue
         if str(key).startswith("Unnamed"):
             continue
-        if str(value).strip() == "":
+        if key in {"spec", "Spec", "service", "Service", "service_abbv", "Service_Abbv", "size_rule", "Size", "field", "value"}:
             continue
-        # Humanize the key for display (e.g., SERVICE_ABBV -> Service Abbv)
-        display_key = str(key).replace("_", " ").title()
-        display_value = value
-        # Format numeric values nicely
-        try:
-            if isinstance(value, (int, float)):
-                display_value = f"{value:.3f}" if isinstance(value, float) else str(value)
-        except Exception:
-            display_value = str(value)
+        cleaned = _clean_text(value)
+        if cleaned:
+            rows.append({"Field": _display_label(str(key)), "Value": cleaned})
 
-        st.markdown(
-            f"<div style='margin-bottom:6px;'><span style='color:{LABEL_COLOR};'>{display_key}:</span> <span style='color:{VALUE_COLOR};'>{display_value}</span></div>",
-            unsafe_allow_html=True,
+    return rows or [{"Field": "Answer", "Value": "No displayable fields returned."}]
+
+
+def _results_from_response(response: Mapping[str, Any] | None) -> list[Any]:
+    if not response:
+        return []
+    results = response.get("results")
+    if isinstance(results, list):
+        return results
+    if results:
+        return [results]
+    if response.get("success"):
+        return [response]
+    return []
+
+
+def _query_result_to_response(result: Any) -> dict[str, Any]:
+    specifications = list(getattr(result, "specifications", []) or [])
+    message = _clean_text(getattr(result, "message", ""))
+    if not specifications:
+        return {"success": False, "message": message or "No result."}
+
+    normalized_results: list[dict[str, Any]] = []
+    for specification in specifications:
+        data = _result_to_mapping(specification)
+        normalized_results.append(
+            {
+                "spec": data.get("Spec") or data.get("spec"),
+                "service": data.get("Service") or data.get("service"),
+                "service_abbv": data.get("Service_Abbv") or data.get("service_abbv"),
+                "size_rule": data.get("Size") or data.get("size_rule"),
+                **{
+                    str(key): value
+                    for key, value in data.items()
+                    if key not in {"Spec", "spec", "Service", "service", "Service_Abbv", "service_abbv", "Size", "size_rule"}
+                },
+            }
         )
 
-    st.markdown("</div>", unsafe_allow_html=True)
+    if len(normalized_results) == 1:
+        response = {"success": True, **normalized_results[0]}
+        if message:
+            response["message"] = message
+        return response
+
+    response = {"success": True, "results": normalized_results}
+    if message:
+        response["message"] = message
+    return response
 
 
-def render_answer_panel():
-    """Display modal with search results if there are any, with proper close button functionality."""
-    # Check session state
-    show_modal = st.session_state.get("show_modal", False)
-    modal_results = st.session_state.get("modal_results")
-    
-    # Only render if both conditions are true
-    if not (show_modal and modal_results):
-        return
-    
-    results = modal_results if isinstance(modal_results, list) else [modal_results]
-    
-    # Create modal container
-    with st.container(border=True):
-        # Title
-        st.markdown(f"### 🔷 PipingIQ Answer - {len(results)} Result(s)")
-        
-        # Close button
-        if st.button("Close Results"):
-            st.session_state["show_modal"] = False
-            st.session_state["modal_results"] = None
-            st.rerun()
-        
-        st.divider()
-        
-        # Display results
-        for i, result in enumerate(results):
-            render_result_card(result)
-            if i < len(results) - 1:
-                st.divider()
-
-
-def run_application():
-    from database import DatabaseError, DatabaseManager
+def _lookup_pipe_specification(question: str, db: Any) -> dict[str, Any]:
     from knowledge_router import route_query
 
-    if "show_modal" not in st.session_state:
-        st.session_state["show_modal"] = False
-    if "modal_results" not in st.session_state:
-        st.session_state["modal_results"] = None
+    query_text = " ".join(question.split())
+    direct_response = route_query(query_text, PIPE_SPECIFICATIONS_MODULE, db)
+    if _results_from_response(direct_response):
+        return direct_response
+
+    service_lookup_response = _query_result_to_response(db.query(service=query_text))
+    if _results_from_response(service_lookup_response):
+        return service_lookup_response
+
+    spec_lookup_response = _query_result_to_response(db.query(spec=query_text))
+    if _results_from_response(spec_lookup_response):
+        return spec_lookup_response
+
+    specification_response = route_query(f"pipe spec for {query_text}", PIPE_SPECIFICATIONS_MODULE, db)
+    if _results_from_response(specification_response):
+        return specification_response
+
+    if SPEC_CODE_PATTERN.fullmatch(query_text):
+        return spec_lookup_response
+    if service_lookup_response.get("message"):
+        return service_lookup_response
+    if specification_response.get("message"):
+        return specification_response
+    return direct_response
+
+
+def _render_title() -> None:
+    st.markdown(
+        """
+        <div class="piq-title">
+            <h1>PipingIQ</h1>
+            <p>Engineering Test Interface</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_search_bar() -> tuple[str, bool, bool]:
+    st.markdown('<div class="section-label">Search</div>', unsafe_allow_html=True)
+    input_col, search_col, calc_col = st.columns([8, 1.4, 1.8], vertical_alignment="bottom")
+    with input_col:
+        question = st.text_input(
+            "Search",
+            key="search_box",
+            label_visibility="collapsed",
+            placeholder='Ask a pipe specification question, for example: What flange do I use for 3" STM LP?',
+        )
+    with search_col:
+        search_clicked = st.button("Search", key="search_button", use_container_width=True)
+    with calc_col:
+        calculations_clicked = st.button("Calculations", key="calculations_button", use_container_width=True)
+    return question or "", search_clicked, calculations_clicked
+
+
+def _render_navigation() -> str:
+    st.markdown('<div class="section-label">Navigation</div>', unsafe_allow_html=True)
+    selected = st.radio(
+        "Navigation",
+        NAVIGATION_ITEMS,
+        key="navigation",
+        label_visibility="collapsed",
+    )
+    return str(selected)
+
+
+def _render_workspace(response: Mapping[str, Any] | None) -> None:
+    st.markdown('<div class="section-label">Engineering Workspace</div>', unsafe_allow_html=True)
+    tabs = st.tabs(
+        WORKSPACE_TABS,
+        default=st.session_state.get("workspace_tab", WORKSPACE_TABS[0]),
+        key="engineering_workspace_tabs",
+        on_change="rerun",
+    )
+    results = _results_from_response(response)
+
+    with tabs[0]:
+        if response and not response.get("success"):
+            st.info(_clean_text(response.get("message", "No result.")))
+        elif results:
+            for index, result in enumerate(results, start=1):
+                if len(results) > 1:
+                    st.caption(f"Result {index}")
+                st.dataframe(
+                    pd.DataFrame(_result_rows(result)),
+                    hide_index=True,
+                    use_container_width=True,
+                )
+        else:
+            st.info("Search results will appear here.")
+
+    with tabs[1]:
+        dimension_results = [
+            result for result in results if _clean_text(_result_to_mapping(result).get("Item"))
+        ]
+        if dimension_results:
+            for result in dimension_results:
+                st.dataframe(pd.DataFrame(_result_rows(result)), hide_index=True, use_container_width=True)
+        else:
+            st.info("Dimension query results will appear here.")
+
+    with tabs[2]:
+        st.info("Calculation outputs will appear here when supported by the backend.")
+
+    with tabs[3]:
+        st.info("Standards references will appear here when returned by the backend.")
+
+    with tabs[4]:
+        if results:
+            source_rows = []
+            for result in results:
+                data = _result_to_mapping(result)
+                source_rows.append(
+                    {
+                        "Library": _clean_text(data.get("library_name")),
+                        "Type": _clean_text(data.get("library_type")),
+                        "Project": _clean_text(data.get("project_name")),
+                        "Import Batch": _clean_text(data.get("import_batch_id")),
+                    }
+                )
+            st.dataframe(pd.DataFrame(source_rows), hide_index=True, use_container_width=True)
+        else:
+            st.info("Source information will appear here.")
+
+    with tabs[5]:
+        st.text_area("Notes", key="engineering_notes", label_visibility="collapsed", height=180)
+
+
+def _save_upload(uploaded_file: Any) -> Path:
+    DATA_IMPORTS.mkdir(parents=True, exist_ok=True)
+    target = DATA_IMPORTS / Path(uploaded_file.name).name
+    target.write_bytes(uploaded_file.getbuffer())
+    return target
+
+
+def _render_upload_panel(db: Any) -> None:
+    st.markdown('<div class="section-label">Upload</div>', unsafe_allow_html=True)
+    with st.container(border=True):
+        pdf_file = st.file_uploader("Upload PDF", type=["pdf"], key="pdf_upload")
+        if pdf_file is not None:
+            saved_pdf = _save_upload(pdf_file)
+            st.info(f"PDF staged: {saved_pdf.name}")
+
+        excel_file = st.file_uploader("Upload Excel", type=["xls", "xlsx"], key="excel_upload")
+        dataset_name = st.selectbox(
+            "Excel Dataset",
+            ["pipe_specs", "service_aliases", "field_aliases", "standards_references"],
+            key="excel_dataset",
+        )
+        if excel_file is not None and st.button("Import Excel", key="import_excel", use_container_width=True):
+            from database import import_excel_dataset, load_runtime_dataframe
+
+            saved_excel = _save_upload(excel_file)
+            try:
+                batch_id = import_excel_dataset(dataset_name, saved_excel, sqlite_path=db.sqlite_path)
+                dataframe = load_runtime_dataframe(db.sqlite_path)
+                db._build_indexes(dataframe)
+                db._df = dataframe
+                st.success(f"Imported {dataset_name}: {batch_id}")
+            except Exception as exc:
+                st.error(f"Excel import failed: {_clean_text(exc)}")
+
+
+def _render_status_bar(db: Any, selected_nav: str) -> None:
+    try:
+        stats = db.statistics()
+        database_status = f"{stats.get('record_count', 0)} records"
+    except Exception:
+        database_status = "Unavailable"
+
+    knowledge_status = "Available" if KNOWLEDGE_LIBRARY.exists() else "Missing"
+    project = selected_nav or "Home"
+    st.markdown(
+        f"""
+        <div class="status-bar">
+            <div class="status-item"><strong>Database</strong>{_clean_text(database_status)}</div>
+            <div class="status-item"><strong>Knowledge Base</strong>{_clean_text(knowledge_status)}</div>
+            <div class="status-item"><strong>Version</strong>{_clean_text(VERSION)}</div>
+            <div class="status-item"><strong>Current Project</strong>{_clean_text(project)}</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def run_application() -> None:
+    from database import DatabaseError, DatabaseManager
 
     setup_page()
-    render_header()
+    _render_title()
 
     try:
         db = DatabaseManager()
@@ -588,18 +539,33 @@ def run_application():
         st.error(f"Unable to initialize the database: {exc}")
         st.stop()
 
-    selected_module, question, search_clicked = render_main_screen()
+    if "last_response" not in st.session_state:
+        st.session_state["last_response"] = None
+
+    question, search_clicked, calculations_clicked = _render_search_bar()
+    st.divider()
+
+    if calculations_clicked:
+        st.session_state["navigation"] = "Engineering Calculations"
 
     if search_clicked:
         if not question.strip():
-            st.warning("Please enter a Pipe Specifications question before searching.")
+            st.session_state["last_response"] = {
+                "success": False,
+                "message": "Please enter an engineering question before searching.",
+            }
         else:
-            st.divider()
-            result = route_query(question, selected_module, db)
-            if result["success"]:
-                st.success(result.get("message") or "Answer Found")
-                render_results(result.get("results", [result]))
-            else:
-                st.error(result["message"])
+            st.session_state["workspace_tab"] = "Specification"
+            st.session_state["last_response"] = _lookup_pipe_specification(question, db)
 
-    render_answer_panel()
+    nav_col, workspace_col, upload_col = st.columns([1.25, 3.7, 1.55], gap="large")
+    with nav_col:
+        selected_nav = _render_navigation()
+
+    with workspace_col:
+        _render_workspace(st.session_state.get("last_response"))
+
+    with upload_col:
+        _render_upload_panel(db)
+
+    _render_status_bar(db, selected_nav)

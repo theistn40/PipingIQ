@@ -134,6 +134,8 @@ def infer_service_from_dataframe(df: Any, question: str) -> tuple[str, str] | No
         return None
 
     print(candidates)
+    candidates.sort(key=lambda c: c[0], reverse=True)
+    highest_score = candidates[0][0]
     candidates.sort(reverse=True)
     _, _, _, service_name, service_abbv = candidates[0]
     return service_name, service_abbv

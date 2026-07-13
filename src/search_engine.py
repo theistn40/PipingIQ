@@ -95,17 +95,43 @@ def infer_service_from_dataframe(df: Any, question: str) -> tuple[str, str] | No
 
     candidates: list[tuple[int, int, int, str, str]] = []
     service_pairs = df[["Service", "Service_Abbv"]].fillna("").drop_duplicates()
+
     for _, row in service_pairs.iterrows():
         service_name = str(row["Service"]).strip()
         service_abbv = str(row["Service_Abbv"]).strip().upper()
         if not service_name and not service_abbv:
             continue
 
-        best_score = 0
-        has_token_match = False
+        for service_value in [value.strip() for value in re.split(r"[;/,]", service_name) if value.strip()]:
+            service_normalized = normalize_search_text(service_value)
+            if service_normalized and service_normalized == q_normalized:
+                return service_name, service_abbv
 
-        if service_abbv:
-            abb_normalized = normalize_search_text(service_abbv)
+    for _, row in service_pairs.iterrows():
+        service_name = str(row["Service"]).strip()
+        service_abbv = str(row["Service_Abbv"]).strip().upper()
+        if not service_name and not service_abbv:
+            continue
+
+        for abbv_value in [value.strip().upper() for value in re.split(r"[;/,]", service_abbv) if value.strip()]:
+            abb_normalized = normalize_search_text(abbv_value)
+            if abb_normalized and abb_normalized == q_normalized:
+                return service_name, service_abbv
+
+    for _, row in service_pairs.iterrows():
+        service_name = str(row["Service"]).strip()
+        service_abbv = str(row["Service_Abbv"]).strip().upper()
+        if not service_name and not service_abbv:
+            continue
+
+        service_names = [value.strip() for value in re.split(r"[;/,]", service_name) if value.strip()]
+        service_abbvs = [value.strip().upper() for value in re.split(r"[;/,]", service_abbv) if value.strip()]
+
+        for abbv_value in service_abbvs:
+            best_score = 0
+            has_token_match = False
+
+            abb_normalized = normalize_search_text(abbv_value)
             abb_tokens = abb_normalized.split()
             if abb_tokens and set(abb_tokens).intersection(q_tokens):
                 has_token_match = True
@@ -114,8 +140,14 @@ def infer_service_from_dataframe(df: Any, question: str) -> tuple[str, str] | No
             elif abb_tokens and set(abb_tokens).issubset(q_tokens):
                 best_score = max(best_score, 70 + len(abb_tokens))
 
-        if service_name:
-            service_normalized = normalize_search_text(service_name)
+            if best_score or has_token_match:
+                candidates.append((best_score, len(normalize_search_text(abbv_value).split()), len(abbv_value), service_name, service_abbv))
+
+        for service_value in service_names:
+            best_score = 0
+            has_token_match = False
+
+            service_normalized = normalize_search_text(service_value)
             service_tokens = service_normalized.split()
             shared_tokens = set(service_tokens).intersection(q_tokens)
             if shared_tokens:
@@ -127,15 +159,13 @@ def infer_service_from_dataframe(df: Any, question: str) -> tuple[str, str] | No
             elif shared_tokens:
                 best_score = max(best_score, 40 + len(shared_tokens))
 
-        if best_score or has_token_match:
-            candidates.append((best_score, len(normalize_search_text(service_name).split()), len(service_name), service_name, service_abbv))
+            if best_score or has_token_match:
+                candidates.append((best_score, len(normalize_search_text(service_value).split()), len(service_value), service_name, service_abbv))
 
     if not candidates:
         return None
 
-    print(candidates)
     candidates.sort(key=lambda c: c[0], reverse=True)
-    highest_score = candidates[0][0]
     candidates.sort(reverse=True)
     _, _, _, service_name, service_abbv = candidates[0]
     return service_name, service_abbv

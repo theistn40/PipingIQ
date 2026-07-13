@@ -741,10 +741,46 @@ def load_pipe_spec_dataframe(path: Path | str) -> pd.DataFrame:
     if not source_path.exists():
         raise FileNotFoundError(f"Pipe specification workbook not found: {source_path}")
 
-    dataframe = pd.read_excel(source_path).fillna("")
-    dataframe.columns = [normalize_column_name(column) for column in dataframe.columns]
+    raw_dataframe = pd.read_excel(
+        source_path,
+        sheet_name="Master_Spec_Template_Full",
+        header=None,
+        dtype=object,
+        keep_default_na=False,
+        na_filter=False,
+    ).fillna("")
+
+    header_index: int | None = None
+    for index, row in raw_dataframe.iterrows():
+        normalized_values = {normalize_column_name(value) for value in row.tolist()}
+        if REQUIRED_COLUMNS.issubset(normalized_values):
+            header_index = int(index)
+            break
+
+    if header_index is None:
+        dataframe = pd.read_excel(source_path, sheet_name="Master_Spec_Template_Full").fillna("")
+        dataframe.columns = [normalize_column_name(column) for column in dataframe.columns]
+    else:
+        column_counts: dict[str, int] = {}
+        columns: list[str] = []
+        for position, column in enumerate(raw_dataframe.iloc[header_index].tolist()):
+            normalized_column = normalize_column_name(column) or f"Unnamed: {position}"
+            column_count = column_counts.get(normalized_column, 0)
+            column_counts[normalized_column] = column_count + 1
+            columns.append(
+                normalized_column if column_count == 0 else f"{normalized_column}.{column_count}"
+            )
+
+        dataframe = raw_dataframe.iloc[header_index + 1 :].copy()
+        dataframe.columns = columns
+        dataframe.columns = [normalize_column_name(column) for column in dataframe.columns]
 
     if REQUIRED_COLUMNS.issubset(dataframe.columns):
+        populated_spec_rows = dataframe[list(REQUIRED_COLUMNS)].apply(
+            lambda row: any(str(value).strip() for value in row),
+            axis=1,
+        )
+        dataframe = dataframe.loc[populated_spec_rows]
         repeated_headers = (
             dataframe["Spec"].astype(str).str.strip().str.upper().eq("SPEC")
             & dataframe["Service"].astype(str).str.strip().str.upper().eq("SERVICE")
